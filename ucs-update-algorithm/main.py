@@ -1,5 +1,6 @@
 # Command Line Processing
 from genericpath import exists
+from http import client
 from importlib.resources import path
 from sys import argv
 import os
@@ -34,14 +35,6 @@ except errors.InvalidDataDirectoryError:
 import pymysql
 import time
 
-# For jupyter notebooks
-# Install pymysql in the current Jupyter kernel
-# import tqdm
-# !pip install --yes ipywidgets
-# !jupyter nbextension enable --py widgetsnbextension
-# !jupyter labextension install @jupyter-widgets/jupyterlab-manager
-# from tqdm.notebook import tqdm, trange
-
 # Configuration Settings
 from dotenv import load_dotenv
 
@@ -61,6 +54,11 @@ api = LambdaHandlers.LambdaHandler(
 
 # FIXME: Clear all tables
 api.remake_all_tables()
+
+# Keep track of how many rows we processed in every datahunt thus far
+datahunt_tracker = pd.DataFrame(columns=["datahunt_id", "num_rows_processed"])
+num_rows_processed = 0
+datahunt_id = None
 
 # Pull in all the data for this iteration of scoring
 module_filemap = UMutils.get_module_files_mapping(
@@ -96,7 +94,8 @@ for i, (module_name, m) in enumerate(module_filemap.items()):
         else:
             adj_file = pd.read_csv(module_filemap[module_name]["GoldStandard"])
         dh_file = pd.read_csv(module_filemap[module_name]["Datahunt"])
-
+        # If data hunt was partially processed before, ignore the processed rows
+        # FIXME: Implement
         UMutils.score_task(
             iaa_file=iaa_file,
             adj_file=adj_file,
@@ -105,9 +104,17 @@ for i, (module_name, m) in enumerate(module_filemap.items()):
             scored_questions=scored_questions,
             client=api,
         )
+        # Update how much of the Datahunts we've processed
+        datahunt = pd.read_csv(module_filemap[module_name]["Datahunt"])
+        num_rows_processed = datahunt.shape[0]
+        datahunt_id = datahunt["schema_sha256"][0]
+        api.insert_into_table(
+            "datahunt_tracker",
+            num_rows_processed=num_rows_processed,
+            datahunt_id=datahunt_id,
+        )
     UMutils.progress_bar(i + 1, len(module_filemap.keys()))
 
-# Update how much of the Datahunts we've processed
 
 # Add results to results directory
 api.post_results(data_dir=results_dir, name="ucs_global")
@@ -119,7 +126,4 @@ UMutils.post_whitelisted_ucs(data_dir=results_dir, ucs=demo_users_ucs)
 # Create and save visualizations
 UMViz.ucs_histogram(data_dir=results_dir, data=demo_users_ucs)
 
-# Reset command line color
-import colorama
-
-print(colorama.Fore.RESET)
+print("\n")

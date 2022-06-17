@@ -2,6 +2,9 @@ import os
 import pandas as pd
 import numpy as np
 import colorama
+from colorama import init
+
+init(autoreset=True)
 from datetime import datetime
 import sys
 
@@ -130,16 +133,18 @@ def get_module_template(module_name, module_filemap):
             and row["question_type"][0] != "TEXT"
         ):
             scored_questions.append(row["question_number"])
-            # FIXME
-            if row["question_type"][0] == "RADIO":
-
-                question_type = "select_one_nominal"
             if row["question_type"][0] == "CHECKBOX":
                 question_type = "select_all"
-            else:
-                question_type = "select_all"
-                # print(row["question_type"][0])
-                # sys.exit()
+            if (
+                row["question_type"][0] == "RADIO"
+                and row["alpha_distance"][0] == "nominal"
+            ):
+                question_type = "select_one_nominal"
+            if (
+                row["question_type"][0] == "RADIO"
+                and row["alpha_distance"][0] == "ordinal"
+            ):
+                question_type = "select_one_ordinal"
             dct = {
                 "type": question_type,
                 "num_choices": len(row["answer_content"]),
@@ -199,6 +204,18 @@ def ucs_update_score(user_id, client):
     num_task_scores = len(task_scores)
     n = min(10, int(np.sqrt(num_task_scores)) + 1)
     ucs = client.table_to_df("ucs")
+    # Check for falling through the cracks people in dekai
+    dekai_excluded = [
+        "efd1759c-353a-4b33-9d37-b40fdebb0239",
+        "8302fd02-2391-48d5-8734-f059d2f726a2",
+        "95b50339-9652-43bf-b741-afec114b03bd",
+        "2daadb97-c643-432e-bd4d-0b1ad471f19d",
+        "a9dbc445-6068-48de-8dcf-99d37e1a7b33",
+    ]
+    if user_id in dekai_excluded:
+        print("%s fell through the cracks" % (user_id))
+        sys.exit()
+
     if user_id not in ucs["uuid"].values:  # if this is the user's first task
         cur_ucs = 0.5
         var_scores = np.var(task_scores.iloc[-n:])
@@ -309,8 +326,8 @@ def score_task(iaa_file, adj_file, dh_file, question_schema, scored_questions, c
         Takes in a question and the selected answer, returns a score between 0 and 1 depending
         on how far off the answer is from the consensus answer.
         """
-        consensus_answer = int(consensus_answers[question])
-        num_choices = question_schema[question]["num_choices"]
+        consensus_answer = int(consensus_answers[str(question)])
+        num_choices = question_schema[str(question)]["num_choices"]
         return 1 - (abs(answer - consensus_answer) / num_choices)
 
     def scoring_select_all(question, answer_list):
@@ -320,8 +337,8 @@ def score_task(iaa_file, adj_file, dh_file, question_schema, scored_questions, c
         compared to the consensus answer selections.
         """
         answer_set = set(answer_list)
-        consensus_answer_set = set(consensus_answers[question])
-        num_choices = question_schema[question]["num_choices"]
+        consensus_answer_set = set(consensus_answers[str(question)])
+        num_choices = question_schema[str(question)]["num_choices"]
 
         total_correct = 0
         for answer in range(1, num_choices + 1):
@@ -400,7 +417,6 @@ def load_participants_list(file_name):
 
 
 def get_whitelisted_users(participants_list, client):
-    # FIXME: Some duplicate uuid's in ucs at the end of the day
     ucs = client.table_to_df("ucs").astype({"score": float}).groupby(["uuid"]).mean()
     ucs = pd.merge(
         ucs, participants_list, left_on="uuid", right_on="contributor_uuid", how="right"
