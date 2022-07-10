@@ -54,19 +54,22 @@ def get_module_files_mapping(datahunt, iaa, schema, goldstandard):
             if modulename in dh:
                 dh_path = os.path.join(datahunt, dh)
                 mapping[modulename]["Datahunt"] = dh_path
-        for iaa_file in os.listdir(iaa):
-            if modulename in iaa_file:
-                iaa_path = os.path.join(iaa, iaa_file)
-                mapping[modulename]["IAA"] = iaa_path
+        if os.path.exists(iaa):
+            for iaa_file in os.listdir(iaa):
+                if modulename in iaa_file:
+                    iaa_path = os.path.join(iaa, iaa_file)
+                    mapping[modulename]["IAA"] = iaa_path
         for schema_file in os.listdir(schema):
             if modulename in schema_file:
                 schema_path = os.path.join(schema, schema_file)
                 mapping[modulename]["Schema"] = schema_path
-
-    # if os.path.exists(goldstandard):
-    #     for gs in os.listdir(goldstandard):
-    #         if
-
+        if os.path.exists(goldstandard):
+            for gs_file in os.listdir(goldstandard):
+                if modulename in gs_file:
+                    gs_path = os.path.join(goldstandard, gs_file)
+                    mapping[modulename]["GoldStandard"] = gs_path
+    print(mapping)
+    sys.exit()
     return mapping
 
 

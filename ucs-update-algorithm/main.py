@@ -23,13 +23,12 @@ import sys
 try:
     if not (
         os.path.exists(datahunt_dir)
-        and os.path.exists(iaa)
         and os.path.exists(schema_dir)
         and os.path.exists(results_dir)
     ):
         raise errors.InvalidDataDirectoryError
 except errors.InvalidDataDirectoryError:
-    print("One of the inputted data directories does not exist.")
+    print("One of the required data directories does not exist.")
     sys.exit()
 
 import pymysql
@@ -54,16 +53,23 @@ api = LambdaHandlers.LambdaHandler(
 
 # FIXME: Clear all tables
 api.remake_all_tables()
-
 # Keep track of how many rows we processed in every datahunt thus far
 datahunt_tracker = pd.DataFrame(columns=["datahunt_id", "num_rows_processed"])
 num_rows_processed = 0
 datahunt_id = None
 
 # Pull in all the data for this iteration of scoring
-module_filemap = UMutils.get_module_files_mapping(
-    datahunt=datahunt_dir, iaa=iaa_dir, schema=schema_dir, goldstandard=None
-)
+if os.path.exists(goldstandard_dir):
+    module_filemap = UMutils.get_module_files_mapping(
+        datahunt=datahunt_dir,
+        iaa=iaa_dir,
+        schema=schema_dir,
+        goldstandard=goldstandard_dir,
+    )
+else:
+    module_filemap = UMutils.get_module_files_mapping(
+        datahunt=datahunt_dir, iaa=iaa_dir, schema=schema_dir, goldstandard=None
+    )
 
 (
     ArgumentFinal,
@@ -105,14 +111,14 @@ for i, (module_name, m) in enumerate(module_filemap.items()):
             client=api,
         )
         # Update how much of the Datahunts we've processed
-        datahunt = pd.read_csv(module_filemap[module_name]["Datahunt"])
-        num_rows_processed = datahunt.shape[0]
-        datahunt_id = datahunt["schema_sha256"][0]
-        api.insert_into_table(
-            "datahunt_tracker",
-            num_rows_processed=num_rows_processed,
-            datahunt_id=datahunt_id,
-        )
+        # datahunt = pd.read_csv(module_filemap[module_name]["Datahunt"])
+        # num_rows_processed = datahunt.shape[0]
+        # datahunt_id = datahunt["schema_sha256"][0]
+        # api.insert_into_table(
+        #     "datahunt_tracker",
+        #     num_rows_processed=num_rows_processed,
+        #     datahunt_id=datahunt_id,
+        # )
     UMutils.progress_bar(i + 1, len(module_filemap.keys()))
 
 
