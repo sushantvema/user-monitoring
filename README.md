@@ -22,7 +22,7 @@ The User Credibility Score algorithm takes in Datahunt, Inter Annotator Agreemen
 - `name-results` where the calculated UCS scores will go along with any generated visualizations
 
 3. Notes: For each annotation module you're planning on grading, you MUST have a datahunt, iaa, and schema file all placed in the appropriate directory. In the case that you're using gold standard data to grade annotation modules, ALL the modules have to have gold standard files.
-4. Once you have the data directories set up, you can run the script with `python3 main.py name-datahunt name-iaa name-schema name-goldstandard name-results` where `name` is just an arbitrary but uniform label for all the data directories in this batch.
+4. Once you have the data directories set up, you can run the script with `python3 main.py name-datahunt name-iaa name-schema name-results name-goldstandard` where `name` is just an arbitrary but uniform label for all the data directories in this batch.
 5. The process takes between 5-10 minutes to run. A progress tracker is displayed in the command line.
 
 ##
