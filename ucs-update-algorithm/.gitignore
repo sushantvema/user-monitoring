@@ -1,0 +1,7 @@
+.DS_Store
+.env
+.idea/
+.ipynb_checkpoints/
+.vscode/
+dev/
+testing.ipynb

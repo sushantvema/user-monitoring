@@ -71,44 +71,48 @@ else:
         datahunt=datahunt_dir, iaa=iaa_dir, schema=schema_dir, goldstandard=None
     )
 
-(
+if os.path.exists(goldstandard_dir):
+    (
     ArgumentFinal,
     EvidenceFinal,
     LanguageFinal,
     ProbabilityFinal,
     ReasoningFinal,
     SourceFinal,
-) = UMutils.get_matched_iaa_schema(module_filemap)
+    ) = UMutils.get_matched_goldstandard_schema(module_filemap)
+else:
+    (
+        ArgumentFinal,
+        EvidenceFinal,
+        LanguageFinal,
+        ProbabilityFinal,
+        ReasoningFinal,
+        SourceFinal,
+    ) = UMutils.get_matched_iaa_schema(module_filemap)
 
 # Scoring
 print("Scoring Progress:")
 UMutils.progress_bar(0, len(module_filemap.keys()))
 for i, (module_name, m) in enumerate(module_filemap.items()):
+    merged_schema = eval("%sFinal" % (module_name))
     if (
         module_filemap[module_name]["Datahunt"] is not None
-        and module_filemap[module_name]["IAA"] is not None
         and module_filemap[module_name]["Schema"] is not None
     ):
         scored_questions, question_schema = UMutils.get_module_template(
             module_name, module_filemap
         )
-        iaa = module_filemap[module_name]["IAA"]
         schema = module_filemap[module_name]["Schema"]
-        iaa_file = UMutils.merge_iaa_schema(iaa=iaa, schema=schema)
-        if module_filemap[module_name]["GoldStandard"] is None:
-            adj_file = None
-        else:
-            adj_file = pd.read_csv(module_filemap[module_name]["GoldStandard"])
         dh_file = pd.read_csv(module_filemap[module_name]["Datahunt"])
         # If data hunt was partially processed before, ignore the processed rows
         # FIXME: Implement
         UMutils.score_task(
-            iaa_file=iaa_file,
-            adj_file=adj_file,
+            merged_schema=merged_schema,
             dh_file=dh_file,
             question_schema=question_schema,
             scored_questions=scored_questions,
             client=api,
+            with_goldstandard=True
         )
         # Update how much of the Datahunts we've processed
         # datahunt = pd.read_csv(module_filemap[module_name]["Datahunt"])

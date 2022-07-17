@@ -1,8 +1,10 @@
+from asyncio import tasks
 import os
 import pandas as pd
 import numpy as np
 import colorama
 from colorama import init
+from operator import itemgetter
 
 init(autoreset=True)
 from datetime import datetime
@@ -68,8 +70,6 @@ def get_module_files_mapping(datahunt, iaa, schema, goldstandard):
                 if modulename in gs_file:
                     gs_path = os.path.join(goldstandard, gs_file)
                     mapping[modulename]["GoldStandard"] = gs_path
-    print(mapping)
-    sys.exit()
     return mapping
 
 
@@ -97,6 +97,22 @@ def merge_iaa_schema(iaa, schema):
     )
     temp["question_Number"] = question.astype(int)
     temp["agreed_Answer"] = answer.astype(int)
+    return temp
+
+def merge_goldstandard_schema(goldstandard, schema):
+    """
+    Returns new 
+    """
+    if goldstandard is None or schema is None:
+        return
+    if not os.path.exists(goldstandard) or not os.path.exists(schema):
+        return
+    goldstandard = pd.read_excel(goldstandard)
+    schema = pd.read_csv(schema)
+    schema['question_label'] = schema["question_label"].str.split("Q")
+    schema['question_label'] = schema['question_label'].apply(itemgetter(1))
+    schema["question_label"] = pd.to_numeric(schema["question_label"])
+    temp = goldstandard.merge(schema, how="left", left_on="Question", right_on="question_label")
     return temp
 
 
@@ -157,21 +173,21 @@ def get_module_template(module_name, module_filemap):
     return scored_questions, question_schema
 
 
-def schema_to_type_and_num(ques, schema_path, config="./evidence_eric/"):
-    df = pd.read_csv(schema_path, encoding="utf-8")
-    override = pd.read_json(config + "schema_override.txt")
-    ques = "T1.Q" + str(ques)
-    qrows = df.loc[df["question_label"] == ques]
-    q_uuid = qrows["question_uuid"].iloc[0]
-    if len(override[override["question_uuid"] == q_uuid]) > 0:
-        qrows = override[override["question_uuid"] == q_uuid]
-    question_type = qrows["question_type"].iloc[0]
-    if question_type == "CHECKBOX":
-        question_type = "checklist"
-    else:
-        question_type = qrows["alpha_distance"].iloc[0]
-    answer_count = qrows["answer_count"].iloc[0]
-    return question_type, answer_count
+# def schema_to_type_and_num(ques, schema_path, config="./evidence_eric/"):
+#     df = pd.read_csv(schema_path, encoding="utf-8")
+#     override = pd.read_json(config + "schema_override.txt")
+#     ques = "T1.Q" + str(ques)
+#     qrows = df.loc[df["question_label"] == ques]
+#     q_uuid = qrows["question_uuid"].iloc[0]
+#     if len(override[override["question_uuid"] == q_uuid]) > 0:
+#         qrows = override[override["question_uuid"] == q_uuid]
+#     question_type = qrows["question_type"].iloc[0]
+#     if question_type == "CHECKBOX":
+#         question_type = "checklist"
+#     else:
+#         question_type = qrows["alpha_distance"].iloc[0]
+#     answer_count = qrows["answer_count"].iloc[0]
+#     return question_type, answer_count
 
 
 def get_matched_iaa_schema(module_filemap):
@@ -186,6 +202,17 @@ def get_matched_iaa_schema(module_filemap):
             packed.append(None)
     return packed
 
+def get_matched_goldstandard_schema(module_filemap):
+    packed = []
+    for module_name in module_filemap.keys():
+        goldstandard = module_filemap[module_name]["GoldStandard"]
+        schema = module_filemap[module_name]["Schema"]
+        df = merge_goldstandard_schema(goldstandard, schema)
+        if not df is None:
+            packed.append(df)
+        else:
+            packed.append(None)
+    return packed
 
 def ucs_update_score(user_id, client):
     """
@@ -257,65 +284,11 @@ def get_answer(question, answer_source, consensus_answers, question_schema):
     else:
         print(question_type)
         raise ValueError("Invalid question type")
-
+   
     return consensus_answers
 
 
-def score_task(iaa_file, adj_file, dh_file, question_schema, scored_questions, client):
-    # adj_file takes priority
-    if adj_file is not None:
-        file = adj_file
-    else:
-        file = iaa_file
-
-    # cleaning invalid rows in file
-    file = file[file.answer_uuid.str.len() > 3]
-
-    # these are the only relevant columns for scoring for now, notice highlight data is not included here
-    cols = ["answer_uuid", "question_Number", "agreed_Answer"]
-
-    # getting rid of some rows where the above columns were the same, this may represent different
-    # highlights for the same question and answer?
-    file = file[cols].drop_duplicates()
-
-    consensus_answers = {}
-
-    # create a set of questions that the IAA data determined converged to a consensus
-    file_consensus_questions = set(file.question_Number)
-
-    # uses get_answer function to fill in the consensus_answers answer key
-    for question in scored_questions:
-        if int(question) in file_consensus_questions:
-            consensus_answers = get_answer(
-                question, file, consensus_answers, question_schema
-            )
-        else:
-            consensus_answers[question] = -1
-
-    # narrow down the datahunt to the relevant columns for scoring, getting rid of some rows
-    # where the data for the below columns were the same, this may represent different highlights
-    # for the same question and answer? not certain.
-    dh = dh_file[
-        ["contributor_uuid", "question_label", "answer_label"]
-    ].drop_duplicates()
-
-    # the question and answer labels in the datahunt are in the form 'T1.QX' and 'T1.QX.AX'
-    # the below lines strip down to only question number and answer number
-    dh["question_label"] = dh["question_label"].str.split("Q").str[1].astype(int)
-    dh["answer_label"] = dh["answer_label"].str.split("A").str[1]
-
-    # we want to groupby contributor_uuid and question_label to get all the answers a user
-    # selected for a particular question, to account for select_all questions. Now, the
-    # granularity of df_grouped will be one row per contributor answering a question.
-    dh_grouped = (
-        dh.groupby(["contributor_uuid", "question_label"]).agg(list).reset_index()
-    )
-
-    # we only want to score the rows with scored questions (not survey questions like 13 and 14)
-    # so we'll filter those out
-    filter = dh_grouped.question_label.isin(map(int, scored_questions))
-    dh_grouped = dh_grouped[filter]
-
+def score_task(merged_schema, dh_file, question_schema, scored_questions, client, with_goldstandard):
     def scoring_select_one_nominal(question, answer):
         """
         Takes in a question and the selected answer, returns a score of 0 if the consensus
@@ -353,6 +326,81 @@ def score_task(iaa_file, adj_file, dh_file, question_schema, scored_questions, c
                 total_correct += 0
 
         return total_correct / num_choices
+    
+    def scoring_select_one_nominal_goldstandard(question, answer, task_number, file):
+        """
+        Takes in a question and the selected answer, returns a score of 0 if the gold standard
+        answer is different, and 1 if the gold standard answer is the same.
+        """
+        file["New Task #"] = pd.to_numeric(file["New Task #"])
+        file = file[file["New Task #"] == task_number]
+        file = file[file["question_label"] == question]
+        # FIXME: Datahunt has answers for questions will null goldstandard data
+        if len(file["Acceptable Answers"].values) == 0:
+            return 0.8
+        if isinstance(file["Acceptable Answers"].values[0], str):
+            gold_standard_answer = file["Acceptable Answers"].values[0].split(",")
+            gold_standard_answer = [round(float(answer)*100%100, 1) for answer in gold_standard_answer]
+            return int(answer in gold_standard_answer)
+        else:
+            gold_standard_answer = int(file["Acceptable Answers"].values[0]*100%100)
+            return int(answer == gold_standard_answer)
+        # print("Select One Ordinal")
+        # print(question)
+        # print(answer)
+        # print(gold_standard_answer)
+        # print(1 - (abs(answer - gold_standard_answer) / num_choices))
+
+
+    def scoring_select_one_ordinal_goldstandard(question, answer, task_number, file):
+        file["New Task #"] = pd.to_numeric(file["New Task #"])
+        file = file[file["New Task #"] == task_number]
+        file = file[file["question_label"] == question]
+        # FIXME: Datahunt has answers for questions will null goldstandard data
+        if len(file["Acceptable Answers"].values) == 0:
+            return 0.8
+        elif isinstance(file["Acceptable Answers"].values[0], str):
+            if file["Acceptable Answers"].values[0][-1] == "*":
+                return 1
+            else: 
+                gold_standard_answers = file["Acceptable Answers"].values[0].split(",")
+                gold_standard_answers = [round(float(answer)*100%100, 1) for answer in gold_standard_answers]
+                return int(answer in gold_standard_answers)
+        else:
+            gold_standard_answer = int(file["Acceptable Answers"].values[0]*100%100)
+            num_choices = question_schema[str(question)]["num_choices"]
+            return 1 - (abs(answer - gold_standard_answer) / num_choices)
+
+    def scoring_select_all_goldstandard(question, answer_list, task_number, file):
+        answer_set = set(answer_list)
+        num_choices = question_schema[str(question)]["num_choices"]
+        file["New Task #"] = pd.to_numeric(file["New Task #"])
+        file = file[file["New Task #"] == task_number]
+        file = file[file["question_label"] == question] 
+        # FIXME: Datahunt has answers for questions will null goldstandard data
+        if len(file["Acceptable Answers"].values) == 0:
+            return 0.8
+        gold_standard_answer_set = file["Acceptable Answers"].values[0]
+        if isinstance(gold_standard_answer_set, float):
+            gold_standard_answer_set = [gold_standard_answer_set]
+        else:    
+            gold_standard_answer_set = [int(round(float(answer)*100%100, 1)) for answer in gold_standard_answer_set.split(",")]
+        total_correct = 0
+        for answer in range(1, num_choices + 1):
+            if (answer in answer_set) and (answer in gold_standard_answer_set):
+                total_correct += 1
+            elif (answer not in answer_set) and (answer not in gold_standard_answer_set):
+                total_correct += 1
+            else:
+                total_correct += 0
+        # print("Select All")
+        # print(question)
+        # print(answer_list)
+        # print(gold_standard_answer_set)
+        # print(total_correct)
+        # print(num_choices)
+        return total_correct / num_choices
+    
 
     def scoring(row):
         """
@@ -381,14 +429,119 @@ def score_task(iaa_file, adj_file, dh_file, question_schema, scored_questions, c
         else:
             raise ValueError("Invalid question type")
 
-    # using the scoring function defined above, we'll create a new column containing the scores
-    # for each contributor answering a question.
-    dh_grouped["score"] = dh_grouped.apply(scoring, axis=1)
+    def scoring_goldstandard(row):
+        question = int(row["question_label"])
+        answer_list = [int(i) for i in row["answer_label"]]
+    
+        question_type = question_schema[str(question)]["type"]
+
+        task_number = int(row["task_url"][-4:])
+
+        if question_type == "select_one_nominal":
+            return scoring_select_one_nominal_goldstandard(question, answer_list[0], task_number, file)
+        elif question_type == "select_one_ordinal":
+            return scoring_select_one_ordinal_goldstandard(question, answer_list[0], task_number, file)
+        elif question_type == "select_all":
+            return scoring_select_all_goldstandard(question, answer_list, task_number, file)
+        else:
+            raise ValueError("Invalid question type")
+
+
+    if not with_goldstandard:
+        # cleaning invalid rows in file
+        file = merged_schema
+        file = file[file.answer_uuid.str.len() > 3]
+
+        # these are the only relevant columns for scoring for now, notice highlight data is not included here
+        cols = ["answer_uuid", "question_Number", "agreed_Answer"]
+
+        # getting rid of some rows where the above columns were the same, this may represent different
+        # highlights for the same question and answer?
+        file = file[cols].drop_duplicates()
+
+        consensus_answers = {}
+
+        # create a set of questions that the IAA data determined converged to a consensus
+        file_consensus_questions = set(file.question_Number)
+
+        # uses get_answer function to fill in the consensus_answers answer key
+        for question in scored_questions:
+            if int(question) in file_consensus_questions:
+                consensus_answers = get_answer(
+                    question, file, consensus_answers, question_schema
+                )
+            else:
+                consensus_answers[question] = -1
+
+        # narrow down the datahunt to the relevant columns for scoring, getting rid of some rows
+        # where the data for the below columns were the same, this may represent different highlights
+        # for the same question and answer? not certain.
+        dh = dh_file[
+            ["contributor_uuid", "question_label", "answer_label"]
+        ].drop_duplicates()
+
+        # the question and answer labels in the datahunt are in the form 'T1.QX' and 'T1.QX.AX'
+        # the below lines strip down to only question number and answer number
+        dh["question_label"] = dh["question_label"].str.split("Q").str[1].astype(int)
+        dh["answer_label"] = dh["answer_label"].str.split("A").str[1]
+
+        # we want to groupby contributor_uuid and question_label to get all the answers a user
+        # selected for a particular question, to account for select_all questions. Now, the
+        # granularity of df_grouped will be one row per contributor answering a question.
+        dh_grouped = (
+            dh.groupby(["contributor_uuid", "question_label"]).agg(list).reset_index()
+        )
+
+        # we only want to score the rows with scored questions (not survey questions like 13 and 14)
+        # so we'll filter those out
+        filter = dh_grouped.question_label.isin(map(int, scored_questions))
+        dh_grouped = dh_grouped[filter]
+
+        # using the scoring function defined above, we'll create a new column containing the scores
+        # for each contributor answering a question.
+        dh_grouped["score"] = dh_grouped.apply(scoring_goldstandard, axis=1)
+
+    else:
+        # remove rows where it was deemed to be no acceptable answers (won't be scored)
+        file = merged_schema
+        file = file[~file['Acceptable Answers'].isnull()]
+
+        # these are the only relevant columns for scoring for now, notice highlight data is not included here
+        cols = ["New Task #", "question_label", "Acceptable Answers", "question_text", "question_type", "answer_label"]
+
+        # narrow down the datahunt to the relevant columns for scoring, getting rid of some rows
+        # where the data for the below columns were the same, this may represent different highlights
+        # for the same question and answer? not certain.
+        dh = dh_file[
+            ["task_url", "contributor_uuid", "question_label", "answer_label"]
+        ].drop_duplicates()
+
+        # the question and answer labels in the datahunt are in the form 'T1.QX' and 'T1.QX.AX'
+        # the below lines strip down to only question number and answer number
+        dh["question_label"] = dh["question_label"].str.split("Q").str[1].astype(int)
+        dh["answer_label"] = dh["answer_label"].str.split("A").str[1]
+
+        # we want to groupby contributor_uuid and question_label to get all the answers a user
+        # selected for a particular question, to account for select_all questions. Now, the
+        # granularity of df_grouped will be one row per contributor answering a question.
+        dh_grouped = (
+            dh.groupby(["task_url", "contributor_uuid", "question_label"]).agg(list).reset_index()
+        )
+
+        # # we only want to score the rows with scored questions (not survey questions like 13 and 14)
+        # # so we'll filter those out
+        filter = dh_grouped.question_label.isin(map(int, scored_questions))
+        dh_grouped = dh_grouped[filter]
+
+        # using the scoring function defined above, we'll create a new column containing the scores
+        # for each contributor answering a question.
+        dh_grouped["score"] = dh_grouped.apply(scoring_goldstandard, axis=1)
+
     # lastly, we want to get the average score for all task responses, this will be their
     # task score. this is done by a simple groupby on contributor_uuid and mean() aggregate function
     calculated_task_scores = (
-        dh_grouped[["contributor_uuid", "score"]]
-        .groupby("contributor_uuid")
+        dh_grouped[["task_url", "contributor_uuid", "score"]]
+        .groupby(["task_url", "contributor_uuid"])
         .mean()
         .reset_index()
     )
