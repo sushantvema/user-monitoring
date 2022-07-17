@@ -1,0 +1,26 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+requests = "*"
+pandas = "*"
+numpy = "*"
+ipykernel = "*"
+pymysql = "*"
+tqdm = "*"
+python-dotenv = "*"
+datetime = "*"
+colorama = "*"
+seaborn = "*"
+openpyxl = "*"
+
+[dev-packages]
+black = "*"
+
+[requires]
+python_version = "3.8.3"
+
+[pipenv]
+allow_prereleases = true
