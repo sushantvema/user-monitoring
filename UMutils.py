@@ -9,6 +9,8 @@ init(autoreset=True)
 from datetime import datetime
 import sys
 
+from SqlHandlers import SqlHandler
+
 
 def get_module_files_mapping(datahunt, iaa, schema, goldstandard):
     """
@@ -222,7 +224,6 @@ def ucs_update_score(user_id, client):
     def logistic(x, k, offset):
         return 1 / (1 + np.e ** (-k * (x - offset)))
 
-    cursor = client.connection.cursor()
     task_scores = client.table_to_df("task_scores")
     task_scores = task_scores[task_scores["user_uuid"] == user_id]["task_score"].astype(
         "float"
@@ -245,24 +246,17 @@ def ucs_update_score(user_id, client):
         print("%s fell through the cracks" % (user_id))
         sys.exit()
 
-    if user_id not in ucs["uuid"].values:  # if this is the user's first task
-        cur_ucs = 0.5
-        var_scores = np.var(task_scores.iloc[-n:])
-        c = logistic(var_scores / (np.log(num_task_scores + 1) / (np.log(a))), 10, 0.2)
-        new_ucs = cur_ucs * (1 - c) + (c) * last_task_score
-        query = "INSERT INTO `ucs` (`uuid`, `score`) VALUES (%s, %s)"
-        cursor.execute(query, (user_id, new_ucs))
-        client.connection.commit()
-    else:
+    cur_ucs = -1
+    user_in_table = user_id in ucs["uuid"].values # is this is the user's first task
+    if user_in_table:
         cur_ucs = ucs[ucs["uuid"] == user_id]["score"].astype("float").iloc[0]
-        var_scores = np.var(task_scores.iloc[-n:])
-        c = logistic(var_scores / (np.log(num_task_scores + 1) / (np.log(a))), 10, 0.2)
-        new_ucs = cur_ucs * (1 - c) + (c) * last_task_score
-        query = "UPDATE `ucs` SET `score` = %s WHERE `uuid` = %s"
-        cursor.execute(query, (new_ucs, user_id))
-        client.connection.commit()
-    cursor.close()
+    else:
+        cur_ucs = 0.5
 
+    var_scores = np.var(task_scores.iloc[-n:])
+    c = logistic(var_scores / (np.log(num_task_scores + 1) / (np.log(a))), 10, 0.2)
+    new_ucs = cur_ucs * (1 - c) + (c) * last_task_score
+    SqlHandler.insert_ucs_scores(user_id, new_ucs, user_in_table)
 
 def get_answer(question, answer_source, consensus_answers, question_schema):
     """

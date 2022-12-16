@@ -17,6 +17,11 @@ class DbInterface(ABC):
     def insert_into_table(self, table, df):
         pass
 
+    #TODO: This should be merged into insert_into_table, but on time crunch
+    @abstractmethod
+    def insert_ucs_scores(self, user_id, new_ucs, is_in_table):
+        pass
+
     @abstractmethod
     def clear_table(self, table):
         pass

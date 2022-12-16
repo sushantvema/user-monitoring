@@ -5,9 +5,10 @@ import UMViz
 import pandas as pd
 
 # Configuration Settings
-#from dotenv import load_dotenv
+from dotenv import load_dotenv
+
 # LambdaHandler API to interact with MySQL database
-import LambdaHandlers
+import SqlHandlers
 
 #Args are paths to directories
 def generate_cred_scores(datahunt_dir, iaa_dir, schema_dir, results_dir, goldstandard_dir):
@@ -29,7 +30,7 @@ def generate_cred_scores(datahunt_dir, iaa_dir, schema_dir, results_dir, goldsta
     #     print("One of the required data directories does not exist.")
     #     sys.exit()
 
-#    load_dotenv()
+    load_dotenv()
 
     endpoint = os.environ.get("ENDPOINT")
     username = os.environ.get("USERNAME")
@@ -38,7 +39,7 @@ def generate_cred_scores(datahunt_dir, iaa_dir, schema_dir, results_dir, goldsta
     password = 'GoodlyLocalPass'
     database_name = 'user_credibility_scores'
 
-    api = LambdaHandlers.LambdaHandler(
+    api = SqlHandlers.LambdaHandler(
         host=endpoint, user=username, passwd=password, db=database_name
     )
 
