@@ -1,11 +1,11 @@
 import pymysql
 import pandas as pd
 import time
-import os
+from dbInterface import DbInterface
 from datetime import datetime
 
 
-class LambdaHandler:
+class LambdaHandler(DbInterface):
     def __init__(self, host, user, passwd, db):
         # Database Connection
         self.connection = pymysql.connect(host=host, user=user, passwd=passwd, db=db)

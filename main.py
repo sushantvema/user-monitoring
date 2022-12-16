@@ -1,14 +1,9 @@
-# Command Line Processing
-from genericpath import exists
-from http import client
-from importlib.resources import path
-from sys import argv
+
 import os
 import UMutils
 import UMViz
 import pandas as pd
-import errors
-import sys
+
 # Configuration Settings
 #from dotenv import load_dotenv
 # LambdaHandler API to interact with MySQL database
@@ -42,6 +37,7 @@ def generate_cred_scores(datahunt_dir, iaa_dir, schema_dir, results_dir, goldsta
     #database access info
     password = 'GoodlyLocalPass'
     database_name = 'user_credibility_scores'
+
     api = LambdaHandlers.LambdaHandler(
         host=endpoint, user=username, passwd=password, db=database_name
     )

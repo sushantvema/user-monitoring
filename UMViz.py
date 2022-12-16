@@ -1,6 +1,5 @@
 import seaborn as sns
 
-
 def ucs_histogram(data_dir, data):
     sns.set_style("darkgrid")
     data = data.astype({"score": float}).groupby(["contributor_uuid"]).mean()
