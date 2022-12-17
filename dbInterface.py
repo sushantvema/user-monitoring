@@ -1,9 +1,6 @@
 from abc import ABC, abstractmethod
 
 class DbInterface(ABC):
-    @abstractmethod
-    def lambda_handler(self, event=None, context=None):
-        pass
 
     @abstractmethod
     def table_to_df(self, table):

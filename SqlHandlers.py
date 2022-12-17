@@ -10,9 +10,6 @@ class SqlHandler(DbInterface):
         # Database Connection
         self.connection = pymysql.connect(host=host, user=user, passwd=passwd, db=db)
 
-    def sql_handler(self, event=None, context=None):
-        self.insert_into_table(event["table"])
-
     def table_to_df(self, table):
         cursor = self.connection.cursor()
         cursor.execute("SELECT * from {}".format(table))
@@ -22,11 +19,6 @@ class SqlHandler(DbInterface):
         for row in rows:
             df.loc[len(df.index)] = row
         return df
-
-    # def display_table(self, table):
-    #     df = self.table_to_df(table)
-    #     print(table)
-    #     pd.display(df)
 
     def table_to_csv(self, table):
         df = self.table_to_df(table)

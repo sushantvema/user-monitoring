@@ -66,7 +66,7 @@ def get_module_files_mapping(datahunt, iaa, schema, goldstandard):
             if modulename in schema_file:
                 schema_path = os.path.join(schema, schema_file)
                 mapping[modulename]["Schema"] = schema_path
-        if os.path.exists(goldstandard):
+        if goldstandard is not None and os.path.exists(goldstandard):
             for gs_file in os.listdir(goldstandard):
                 if modulename in gs_file:
                     gs_path = os.path.join(goldstandard, gs_file)
@@ -102,13 +102,13 @@ def merge_iaa_schema(iaa, schema):
 
 def merge_goldstandard_schema(goldstandard, schema):
     """
-    Returns new 
+    Returns new
     """
     if goldstandard is None or schema is None:
         return
     if not os.path.exists(goldstandard) or not os.path.exists(schema):
         return
-    goldstandard = pd.read_excel(goldstandard)
+    goldstandard = pd.read_csv(goldstandard, encoding = 'utf-8')
     schema = pd.read_csv(schema)
     schema['question_label'] = schema["question_label"].str.split("Q")
     schema['question_label'] = schema['question_label'].apply(itemgetter(1))
@@ -320,13 +320,12 @@ def score_task(merged_schema, dh_file, question_schema, scored_questions, client
 
         return total_correct / num_choices
     
-    def scoring_select_one_nominal_goldstandard(question, answer, task_number, file):
+    def scoring_select_one_nominal_goldstandard(question, answer, task_id, file):
         """
         Takes in a question and the selected answer, returns a score of 0 if the gold standard
         answer is different, and 1 if the gold standard answer is the same.
         """
-        file["New Task #"] = pd.to_numeric(file["New Task #"])
-        file = file[file["New Task #"] == task_number]
+        file = file[file["source_task_uuid"] == task_id]
         file = file[file["question_label"] == question]
         # FIXME: Datahunt has answers for questions will null goldstandard data
         if len(file["Acceptable Answers"].values) == 0:
@@ -345,9 +344,8 @@ def score_task(merged_schema, dh_file, question_schema, scored_questions, client
         # print(1 - (abs(answer - gold_standard_answer) / num_choices))
 
 
-    def scoring_select_one_ordinal_goldstandard(question, answer, task_number, file):
-        file["New Task #"] = pd.to_numeric(file["New Task #"])
-        file = file[file["New Task #"] == task_number]
+    def scoring_select_one_ordinal_goldstandard(question, answer, task_id, file):
+        file = file[file["source_task_uuid"] == task_id]
         file = file[file["question_label"] == question]
         # FIXME: Datahunt has answers for questions will null goldstandard data
         if len(file["Acceptable Answers"].values) == 0:
@@ -364,11 +362,10 @@ def score_task(merged_schema, dh_file, question_schema, scored_questions, client
             num_choices = question_schema[str(question)]["num_choices"]
             return 1 - (abs(answer - gold_standard_answer) / num_choices)
 
-    def scoring_select_all_goldstandard(question, answer_list, task_number, file):
+    def scoring_select_all_goldstandard(question, answer_list, task_id, file):
         answer_set = set(answer_list)
         num_choices = question_schema[str(question)]["num_choices"]
-        file["New Task #"] = pd.to_numeric(file["New Task #"])
-        file = file[file["New Task #"] == task_number]
+        file = file[file["source_task_uuid"] == task_id]
         file = file[file["question_label"] == question] 
         # FIXME: Datahunt has answers for questions will null goldstandard data
         if len(file["Acceptable Answers"].values) == 0:
@@ -428,14 +425,14 @@ def score_task(merged_schema, dh_file, question_schema, scored_questions, client
     
         question_type = question_schema[str(question)]["type"]
 
-        task_number = int(row["task_url"][-4:])
+        task_id = row["source_task_uuid"]
 
         if question_type == "select_one_nominal":
-            return scoring_select_one_nominal_goldstandard(question, answer_list[0], task_number, file)
+            return scoring_select_one_nominal_goldstandard(question, answer_list[0], task_id, file)
         elif question_type == "select_one_ordinal":
-            return scoring_select_one_ordinal_goldstandard(question, answer_list[0], task_number, file)
+            return scoring_select_one_ordinal_goldstandard(question, answer_list[0], task_id, file)
         elif question_type == "select_all":
-            return scoring_select_all_goldstandard(question, answer_list, task_number, file)
+            return scoring_select_all_goldstandard(question, answer_list, task_id, file)
         else:
             raise ValueError("Invalid question type")
 
@@ -446,11 +443,13 @@ def score_task(merged_schema, dh_file, question_schema, scored_questions, client
         file = file[file.answer_uuid.str.len() > 3]
 
         # these are the only relevant columns for scoring for now, notice highlight data is not included here
-        cols = ["answer_uuid", "question_Number", "agreed_Answer"]
+        cols = ["answer_uuid", "question_Number", "agreed_Answer", "source_task_uuid"]
 
         # getting rid of some rows where the above columns were the same, this may represent different
         # highlights for the same question and answer?
-        file = file[cols].drop_duplicates()
+
+        # @EWTODO: this is dropping extra columns that would be needed to score
+        file = file.drop_duplicates(subset=cols)
 
         consensus_answers = {}
 
@@ -466,12 +465,13 @@ def score_task(merged_schema, dh_file, question_schema, scored_questions, client
             else:
                 consensus_answers[question] = -1
 
+        #for consistency with IAA output, rename this column
+        dh_file = dh_file.rename(columns={"quiz_task_uuid": "source_task_uuid"})
+
         # narrow down the datahunt to the relevant columns for scoring, getting rid of some rows
         # where the data for the below columns were the same, this may represent different highlights
         # for the same question and answer? not certain.
-        dh = dh_file[
-            ["contributor_uuid", "question_label", "answer_label"]
-        ].drop_duplicates()
+        dh = dh_file.drop_duplicates(subset = ["contributor_uuid", "question_label", "answer_label", "source_task_uuid"])
 
         # the question and answer labels in the datahunt are in the form 'T1.QX' and 'T1.QX.AX'
         # the below lines strip down to only question number and answer number
@@ -500,7 +500,7 @@ def score_task(merged_schema, dh_file, question_schema, scored_questions, client
         file = file[~file['Acceptable Answers'].isnull()]
 
         # these are the only relevant columns for scoring for now, notice highlight data is not included here
-        cols = ["New Task #", "question_label", "Acceptable Answers", "question_text", "question_type", "answer_label"]
+        cols = ["source_task_uuid", "question_label", "Acceptable Answers", "question_text", "question_type", "answer_label"]
 
         # narrow down the datahunt to the relevant columns for scoring, getting rid of some rows
         # where the data for the below columns were the same, this may represent different highlights

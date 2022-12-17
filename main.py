@@ -5,13 +5,16 @@ import UMViz
 import pandas as pd
 
 # Configuration Settings
-from dotenv import load_dotenv
+#TODO figure out how to locally require this
+#from dotenv import load_dotenv
 
-# LambdaHandler API to interact with MySQL database
+# SqlHandler API to interact with MySQL database
 import SqlHandlers
+# PandaDBHandler mocks the SqlHandler without a connection to AWS
+import PandaDbHandlers
 
 #Args are paths to directories
-def generate_cred_scores(datahunt_dir, iaa_dir, schema_dir, results_dir, goldstandard_dir):
+def generate_cred_scores(datahunt_dir, iaa_dir, schema_dir, results_dir, goldstandard_dir = None, offlineMode = True):
     # relative_dir = os.path.abspath(os.getcwd()) + "/"
     # datahunt_dir = os.path.join(relative_dir, datahunt)
     # iaa_dir = os.path.join(relative_dir, iaa)
@@ -30,18 +33,21 @@ def generate_cred_scores(datahunt_dir, iaa_dir, schema_dir, results_dir, goldsta
     #     print("One of the required data directories does not exist.")
     #     sys.exit()
 
-    load_dotenv()
+    if offlineMode:
+        api = PandaDbHandlers.PandasDbHandler()
+    else:
+        load_dotenv()
 
-    endpoint = os.environ.get("ENDPOINT")
-    username = os.environ.get("USERNAME")
-    database_name = os.environ.get("DB_NAME")
-    #database access info
-    password = 'GoodlyLocalPass'
-    database_name = 'user_credibility_scores'
+        endpoint = os.environ.get("ENDPOINT")
+        username = os.environ.get("USERNAME")
+        database_name = os.environ.get("DB_NAME")
+        #database access info
+        password = 'GoodlyLocalPass'
+        database_name = 'user_credibility_scores'
 
-    api = SqlHandlers.LambdaHandler(
-        host=endpoint, user=username, passwd=password, db=database_name
-    )
+        api = SqlHandlers.SqlHandler(
+            host=endpoint, user=username, passwd=password, db=database_name
+        )
 
     # FIXME: Clear all tables
     api.remake_all_tables()
@@ -51,28 +57,28 @@ def generate_cred_scores(datahunt_dir, iaa_dir, schema_dir, results_dir, goldsta
     datahunt_id = None
 
     # Pull in all the data for this iteration of scoring
-    if os.path.exists(goldstandard_dir):
+    usingGoldStandard = goldstandard_dir is not None and os.path.exists(goldstandard_dir)
+    if usingGoldStandard:
         module_filemap = UMutils.get_module_files_mapping(
             datahunt=datahunt_dir,
             iaa=iaa_dir,
             schema=schema_dir,
             goldstandard=goldstandard_dir,
         )
+
+        (
+            ArgumentFinal,
+            EvidenceFinal,
+            LanguageFinal,
+            ProbabilityFinal,
+            ReasoningFinal,
+            SourceFinal,
+        ) = UMutils.get_matched_goldstandard_schema(module_filemap)
     else:
         module_filemap = UMutils.get_module_files_mapping(
             datahunt=datahunt_dir, iaa=iaa_dir, schema=schema_dir, goldstandard=None
         )
 
-    if os.path.exists(goldstandard_dir):
-        (
-        ArgumentFinal,
-        EvidenceFinal,
-        LanguageFinal,
-        ProbabilityFinal,
-        ReasoningFinal,
-        SourceFinal,
-        ) = UMutils.get_matched_goldstandard_schema(module_filemap)
-    else:
         (
             ArgumentFinal,
             EvidenceFinal,
@@ -104,7 +110,7 @@ def generate_cred_scores(datahunt_dir, iaa_dir, schema_dir, results_dir, goldsta
                 question_schema=question_schema,
                 scored_questions=scored_questions,
                 client=api,
-                with_goldstandard=True
+                with_goldstandard=usingGoldStandard
             )
             # Update how much of the Datahunts we've processed
             # datahunt = pd.read_csv(module_filemap[module_name]["Datahunt"])
@@ -134,8 +140,8 @@ if __name__ == '__main__':
     iaa = './dekai-iaa'
     schema = './dekai-schema'
     results = './dekai-results'
-    goldstandard = './dekai-goldstandard'
+    offlineMode = True
 
-    generate_cred_scores(datahunt, iaa, schema, results, goldstandard)
+    generate_cred_scores(datahunt, iaa, schema, results, offlineMode=True)
 
 print("\n")
