@@ -1,17 +1,14 @@
 import pymysql
 import pandas as pd
 import time
-import os
+from dbInterface import DbInterface
 from datetime import datetime
 
 
-class LambdaHandler:
+class SqlHandler(DbInterface):
     def __init__(self, host, user, passwd, db):
         # Database Connection
         self.connection = pymysql.connect(host=host, user=user, passwd=passwd, db=db)
-
-    def lambda_handler(self, event=None, context=None):
-        self.insert_into_table(event["table"])
 
     def table_to_df(self, table):
         cursor = self.connection.cursor()
@@ -22,11 +19,6 @@ class LambdaHandler:
         for row in rows:
             df.loc[len(df.index)] = row
         return df
-
-    # def display_table(self, table):
-    #     df = self.table_to_df(table)
-    #     print(table)
-    #     pd.display(df)
 
     def table_to_csv(self, table):
         df = self.table_to_df(table)
@@ -95,6 +87,18 @@ class LambdaHandler:
         df = df.apply(mysql_query, axis=1)
         self.connection.commit()
         # self.display_table(table)
+        cursor.close()
+
+    def insert_ucs_scores(self, user_id, new_ucs, is_in_table):
+        cursor = self.connection.cursor()
+        if is_in_table:
+            query = "UPDATE `ucs` SET `score` = %s WHERE `uuid` = %s"
+            cursor.execute(query, (new_ucs, user_id))
+        else:
+            query = "INSERT INTO `ucs` (`uuid`, `score`) VALUES (%s, %s)"
+            cursor.execute(query, (user_id, new_ucs))
+
+        self.connection.commit()
         cursor.close()
 
     def clear_table(self, table):
