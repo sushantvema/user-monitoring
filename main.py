@@ -79,13 +79,14 @@ def generate_cred_scores(datahunt_dir, iaa_dir, schema_dir, results_dir, goldsta
             datahunt=datahunt_dir, iaa=iaa_dir, schema=schema_dir, goldstandard=None
         )
 
+        # FIXME: These assignments should not depend on the order the files are read
         (
             ArgumentFinal,
             EvidenceFinal,
-            LanguageFinal,
-            ProbabilityFinal,
             ReasoningFinal,
             SourceFinal,
+            LanguageFinal,
+            ProbabilityFinal
         ) = UMutils.get_matched_iaa_schema(module_filemap)
 
     # Scoring
@@ -128,7 +129,8 @@ def generate_cred_scores(datahunt_dir, iaa_dir, schema_dir, results_dir, goldsta
     api.post_results(data_dir=results_dir, name="ucs_global")
 
     # FOR PROF DEKAI ONLY - Whitelist participating users and calculate scores
-    participants = UMutils.load_participants_list(results_dir + "/dekai-users.csv")
+    #participants = UMutils.load_participants_list(results_dir + "/dekai-users.csv")
+    participants = UMutils.load_participants_dir()
     demo_users_ucs = UMutils.get_whitelisted_users(participants, client=api)
     UMutils.post_whitelisted_ucs(data_dir=results_dir, ucs=demo_users_ucs)
     # Create and save visualizations
@@ -136,10 +138,10 @@ def generate_cred_scores(datahunt_dir, iaa_dir, schema_dir, results_dir, goldsta
 
 if __name__ == '__main__':
 
-    datahunt = './dekai-datahunt'
-    iaa = './dekai-iaa'
+    datahunt = './dekai2-datahunt'
+    iaa = './dekai2-iaa'
     schema = './dekai-schema'
-    results = './dekai-results'
+    results = './dekai2-results'
     offlineMode = True
 
     generate_cred_scores(datahunt, iaa, schema, results, offlineMode=True)
