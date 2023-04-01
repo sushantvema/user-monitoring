@@ -428,11 +428,11 @@ def score_task(merged_schema, dh_file, question_schema, scored_questions, client
         task_id = row["source_task_uuid"]
 
         if question_type == "select_one_nominal":
-            return scoring_select_one_nominal_goldstandard(question, answer_list[0], task_id[0], file)
+            return scoring_select_one_nominal_goldstandard(question, answer_list[0], task_id, file)
         elif question_type == "select_one_ordinal":
-            return scoring_select_one_ordinal_goldstandard(question, answer_list[0], task_id[0], file)
+            return scoring_select_one_ordinal_goldstandard(question, answer_list[0], task_id, file)
         elif question_type == "select_all":
-            return scoring_select_all_goldstandard(question, answer_list, task_id[0], file)
+            return scoring_select_all_goldstandard(question, answer_list, task_id, file)
         else:
             raise ValueError("Invalid question type")
 
