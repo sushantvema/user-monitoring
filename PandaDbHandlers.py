@@ -39,12 +39,11 @@ class PandasDbHandler(DbInterface):
             self.ucs_df = self.ucs_df.append(df, ignore_index=True)
         elif table == "task_scores":
             # df columns: 'quiz_task_uuid, contributor_uuid, score'
-            merged = pd.merge(self.task_scores_df, df, how="inner")
+            added_df = df.rename(columns={"contributor_uuid": "user_uuid", "score": "task_score"})
+            merged = pd.merge(self.task_scores_df, added_df, how="inner", )
             if len(merged) > 0:
-                print("overlap, merged table:")
-                pd.display(merged)
                 return
-            self.task_scores_df = self.task_scores_df.append(df, ignore_index=True)
+            self.task_scores_df = self.task_scores_df.append(added_df, ignore_index=True)
         elif table == "datahunt_tracker":
             # df columns: 'datahunt_id, num_rows_processed'
             self.datahunt_tracker_df = self.datahunt_tracker_df.append(df, ignore_index=True)
@@ -80,6 +79,6 @@ class PandasDbHandler(DbInterface):
         return self.ucs_df, self.task_scores_df, self.datahunt_tracker_df
 
     def post_results(self, data_dir, name):
-        ucs = self.table_to_df()
+        ucs = self.table_to_df("ucs")
         date = datetime.now().strftime("%Y%m%d-%H%M%S")
         ucs.to_csv(f"{data_dir}/{name}_{date}.csv")

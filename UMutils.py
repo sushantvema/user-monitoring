@@ -256,7 +256,7 @@ def ucs_update_score(user_id, client):
     var_scores = np.var(task_scores.iloc[-n:])
     c = logistic(var_scores / (np.log(num_task_scores + 1) / (np.log(a))), 10, 0.2)
     new_ucs = cur_ucs * (1 - c) + (c) * last_task_score
-    SqlHandler.insert_ucs_scores(user_id, new_ucs, user_in_table)
+    client.insert_ucs_scores(user_id, new_ucs, user_in_table)
 
 def get_answer(question, answer_source, consensus_answers, question_schema):
     """
@@ -440,15 +440,18 @@ def score_task(merged_schema, dh_file, question_schema, scored_questions, client
     if not with_goldstandard:
         # cleaning invalid rows in file
         file = merged_schema
+        if file is None:
+            return
         file = file[file.answer_uuid.str.len() > 3]
 
+        file["question_label"] = file["question_Number"]
+
         # these are the only relevant columns for scoring for now, notice highlight data is not included here
-        cols = ["answer_uuid", "question_Number", "agreed_Answer", "source_task_uuid"]
+        cols = ["answer_uuid", "question_label", "agreed_Answer"]
 
         # getting rid of some rows where the above columns were the same, this may represent different
         # highlights for the same question and answer?
 
-        # @EWTODO: this is dropping extra columns that would be needed to score
         file = file.drop_duplicates(subset=cols)
 
         consensus_answers = {}
@@ -471,7 +474,7 @@ def score_task(merged_schema, dh_file, question_schema, scored_questions, client
         # narrow down the datahunt to the relevant columns for scoring, getting rid of some rows
         # where the data for the below columns were the same, this may represent different highlights
         # for the same question and answer? not certain.
-        dh = dh_file.drop_duplicates(subset = ["contributor_uuid", "question_label", "answer_label", "source_task_uuid"])
+        dh = dh_file.drop_duplicates(subset = ["contributor_uuid", "question_label", "answer_label"])
 
         # the question and answer labels in the datahunt are in the form 'T1.QX' and 'T1.QX.AX'
         # the below lines strip down to only question number and answer number
@@ -492,7 +495,7 @@ def score_task(merged_schema, dh_file, question_schema, scored_questions, client
 
         # using the scoring function defined above, we'll create a new column containing the scores
         # for each contributor answering a question.
-        dh_grouped["score"] = dh_grouped.apply(scoring_goldstandard, axis=1)
+        dh_grouped["score"] = dh_grouped.apply(scoring, axis=1)
 
     else:
         # remove rows where it was deemed to be no acceptable answers (won't be scored)
@@ -532,25 +535,23 @@ def score_task(merged_schema, dh_file, question_schema, scored_questions, client
 
     # lastly, we want to get the average score for all task responses, this will be their
     # task score. this is done by a simple groupby on contributor_uuid and mean() aggregate function
-    calculated_task_scores = (
-        dh_grouped[["task_url", "contributor_uuid", "score"]]
-        .groupby(["task_url", "contributor_uuid"])
-        .mean()
-        .reset_index()
-    )
+    dh_grouped["score"] = pd.to_numeric(dh_grouped["score"])
 
-    quiz_task_uuid = dh_file["quiz_task_uuid"][0]
-    rows_processed = len(dh_file)
+    dh_trimmed = pd.DataFrame([dh_grouped["contributor_uuid"], dh_grouped["task_url"], dh_grouped["score"]]).transpose()
+    dh_trimmed.to_csv("Trim_out.csv")
+    calculated_task_scores = dh_trimmed
 
+    # rename back to quiz_task_uuid to align with the db
+    quiz_task_uuid = dh_file["source_task_uuid"][0]
+    # rows_processed = len(dh_file)
+    #
     calculated_task_scores["quiz_task_uuid"] = quiz_task_uuid
-    calculated_task_scores = calculated_task_scores[
-        ["quiz_task_uuid", "contributor_uuid", "score"]
-    ]
-
+    calculated_task_scores = calculated_task_scores[["quiz_task_uuid", "contributor_uuid", "score"]]
+    #
     client.insert_into_table("task_scores", calculated_task_scores)
-
+    #
     for user_id in calculated_task_scores["contributor_uuid"]:
-        ucs_update_score(user_id, client=client)
+       ucs_update_score(user_id, client=client)
 
 
 def load_participants_list(file_name):
@@ -563,6 +564,40 @@ def load_participants_list(file_name):
         "total_worktime",
     ]
     return participants
+
+def load_participants_dir():
+    directory = "./dekai2-contributors"
+    contributors = []
+    for root, dir, files in os.walk(directory):
+        for file in files:
+            if file.endswith('.csv'):
+                print("Adding users for "+directory+'/'+file)
+                contributors.append(directory+'/'+file)
+
+    contrib_master_list = pd.DataFrame(columns=["nickname", "contributor_uuid", "retrieved", "time"])
+    i = 0
+    while i < len(contributors):
+        c_df = pd.read_csv(contributors[i])
+        c_df.columns.values[1] = "nickname"
+        c_df.columns.values[2] = "contributor_uuid"
+        c_df.columns.values[3] = "retrieved"
+        c_df.columns.values[4] = "time"
+        c_df = c_df.iloc[1:, 1:]
+
+        #add to master DF
+        contrib_master_list = contrib_master_list.append(c_df, ignore_index=True)
+        i = i + 1
+
+    contrib_master_list['retrieved'] = pd.to_numeric(contrib_master_list['retrieved'], errors='coerce')
+    aggregation_functions = {'nickname': 'first', 'contributor_uuid': 'first', 'retrieved': 'sum', 'time': 'first'}
+    contrib_master_list = contrib_master_list.groupby(contrib_master_list['contributor_uuid']).aggregate(aggregation_functions)
+
+    contrib_master_list.index = contrib_master_list.index.set_names('contributor_index')
+
+    print(contrib_master_list)
+    return contrib_master_list
+
+
 
 
 def get_whitelisted_users(participants_list, client):
